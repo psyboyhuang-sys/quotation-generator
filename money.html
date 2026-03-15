@@ -1,0 +1,385 @@
+
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>凱雅郡報價單生成器</title>
+  <!-- 引入 Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- 引入 React 與 ReactDOM -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <!-- 引入 Babel 以解析 JSX -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- 引入 html2pdf -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    function QuotationGenerator() {
+      // 初始公司狀態 (已預填統編與預設資訊，可隨時修改)
+      const [company, setCompany] = useState({
+        name: '凱雅郡創夢有限公司 CREATE DREAM',
+        vat: '59298062',
+        phone: '0912-345-678',
+        email: 'service@createdream.com',
+        address: '台灣某某市某某區某某路1號',
+      });
+
+      // 用於地端解決圖片 CORS 阻擋問題的 Base64 LOGO
+      const [logoUrl, setLogoUrl] = useState('凱雅郡LOGO.jpg');
+
+      // 客戶與報價單基本資訊
+      const [quoteInfo, setQuoteInfo] = useState({
+        clientName: '貴賓客戶名稱',
+        contactPerson: '王大明 先生',
+        quoteNumber: `QT-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}${String(new Date().getDate()).padStart(2, '0')}-01`,
+        date: new Date().toISOString().split('T')[0],
+        validUntil: new Date(new Date().setDate(new Date().getDate() + 14)).toISOString().split('T')[0],
+      });
+
+      // 報價項目
+      const [items, setItems] = useState([
+        { id: 1, name: '品牌視覺設計服務', qty: 1, price: 15000 },
+        { id: 2, name: '社群圖文素材製作', qty: 5, price: 2000 },
+      ]);
+
+      // 備註與稅率
+      const [settings, setSettings] = useState({
+        taxRate: 0.05,
+        notes: '1. 本報價單自開立日起 14 天內有效。\n2. 確認報價後，請先支付 50% 訂金以利專案啟動。\n3. 匯款資訊：國泰世華銀行 (013) 帳號 1234-5678-9012',
+      });
+
+      // 匯出狀態
+      const [isExporting, setIsExporting] = useState(false);
+
+      // 計算金額
+      const subtotal = items.reduce((sum, item) => sum + item.qty * item.price, 0);
+      const tax = Math.round(subtotal * settings.taxRate);
+      const total = subtotal + tax;
+
+      // 處理項目變更
+      const handleItemChange = (index, field, value) => {
+        const newItems = [...items];
+        newItems[index][field] = field === 'name' ? value : Number(value);
+        setItems(newItems);
+      };
+
+      const addItem = () => setItems([...items, { id: Date.now(), name: '', qty: 1, price: 0 }]);
+      const removeItem = (index) => setItems(items.filter((_, i) => i !== index));
+
+      // 處理地端 LOGO 上傳 (轉為 Base64 以避開跨域問題)
+      const handleLogoUpload = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            setLogoUrl(event.target.result);
+          };
+          reader.readAsDataURL(file);
+        }
+      };
+
+      // 匯出 PDF 功能
+      const handleExport = async () => {
+        if (typeof window.html2pdf === 'undefined') {
+          alert('無法載入 PDF 生成套件，請確認網路連線。您也可以直接使用下方的「原生高清列印」功能另存 PDF。');
+          return;
+        }
+        
+        setIsExporting(true);
+        try {
+          const element = document.getElementById('a4-preview');
+          const opt = {
+            margin: 0,
+            filename: `${quoteInfo.quoteNumber}-凱雅郡報價單.pdf`,
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: { 
+              scale: 2, 
+              useCORS: true, 
+              logging: false
+              // 修正：移除了 allowTaint: true，避免地端圖片造成 Canvas 污染而崩潰當機
+            },
+            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+          };
+
+          // 產生並自動下載 PDF
+          await window.html2pdf().set(opt).from(element).save();
+        } catch (error) {
+          console.error('PDF匯出失敗:', error);
+          alert('匯出失敗！如果是因為本地端圖片權限阻擋，請點擊左側「更換 LOGO」手動上傳您的圖片。');
+        } finally {
+          setIsExporting(false);
+        }
+      };
+
+      // 瀏覽器原生列印 (地端可完美運行，畫質最高)
+      const handleNativePrint = () => {
+        window.print();
+      };
+
+      return (
+        <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row font-sans">
+          {/* 針對列印的專屬 CSS，保證 A4 不跑版 */}
+          <style>{`
+            @media print {
+              @page {
+                size: A4 portrait;
+                margin: 0;
+              }
+              body {
+                margin: 0;
+                padding: 0;
+                background: white;
+              }
+              /* 隱藏非列印區域 */
+              #editor-panel, #print-button-container {
+                display: none !important;
+              }
+              /* 滿版 A4 設定 */
+              #a4-preview {
+                width: 210mm !important;
+                min-height: 297mm !important;
+                margin: 0 !important;
+                padding: 15mm 20mm !important;
+                box-shadow: none !important;
+                border: none !important;
+                border-radius: 0 !important;
+                background: white !important;
+                transform: scale(1) !important;
+                position: absolute;
+                top: 0;
+                left: 0;
+              }
+              /* 確保彩色背景與漸層能被印出 */
+              * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+              }
+            }
+          `}</style>
+
+          {/* 左側：編輯器面板 */}
+          <div id="editor-panel" className="w-full md:w-1/3 lg:w-96 bg-white shadow-xl z-10 overflow-y-auto h-screen border-r border-gray-200">
+            <div className="p-6">
+              <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center">
+                <span className="bg-gradient-to-r from-red-500 to-yellow-500 text-transparent bg-clip-text">報價單生成器</span>
+              </h2>
+
+              {/* 公司資訊編輯 */}
+              <section className="mb-6 bg-orange-50 p-4 rounded-xl border border-orange-100">
+                <h3 className="font-semibold text-orange-800 mb-3 flex justify-between items-center">
+                  <span>公司資訊 (可修改)</span>
+                  <label className="text-xs bg-orange-200 text-orange-800 px-2 py-1 rounded cursor-pointer hover:bg-orange-300 transition-colors">
+                    更換 LOGO
+                    <input type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
+                  </label>
+                </h3>
+                <div className="space-y-3 text-sm">
+                  <div><label className="block text-gray-600 mb-1">公司名稱</label><input className="w-full border rounded p-2 focus:ring-2 focus:ring-orange-300" value={company.name} onChange={e => setCompany({...company, name: e.target.value})} /></div>
+                  <div><label className="block text-gray-600 mb-1">統一編號</label><input className="w-full border rounded p-2 focus:ring-2 focus:ring-orange-300" value={company.vat} onChange={e => setCompany({...company, vat: e.target.value})} /></div>
+                  <div><label className="block text-gray-600 mb-1">連絡電話</label><input className="w-full border rounded p-2 focus:ring-2 focus:ring-orange-300" value={company.phone} onChange={e => setCompany({...company, phone: e.target.value})} /></div>
+                  <div><label className="block text-gray-600 mb-1">電子信箱</label><input className="w-full border rounded p-2 focus:ring-2 focus:ring-orange-300" value={company.email} onChange={e => setCompany({...company, email: e.target.value})} /></div>
+                  <div><label className="block text-gray-600 mb-1">公司地址</label><input className="w-full border rounded p-2 focus:ring-2 focus:ring-orange-300" value={company.address} onChange={e => setCompany({...company, address: e.target.value})} /></div>
+                </div>
+              </section>
+
+              {/* 客戶資訊編輯 */}
+              <section className="mb-6">
+                <h3 className="font-semibold text-gray-700 mb-3 border-b pb-2">報價對象</h3>
+                <div className="space-y-3 text-sm">
+                  <div><label className="block text-gray-600 mb-1">客戶名稱</label><input className="w-full border rounded p-2" value={quoteInfo.clientName} onChange={e => setQuoteInfo({...quoteInfo, clientName: e.target.value})} /></div>
+                  <div><label className="block text-gray-600 mb-1">聯絡人</label><input className="w-full border rounded p-2" value={quoteInfo.contactPerson} onChange={e => setQuoteInfo({...quoteInfo, contactPerson: e.target.value})} /></div>
+                  <div className="flex gap-2">
+                    <div className="w-1/2"><label className="block text-gray-600 mb-1">報價單號</label><input className="w-full border rounded p-2" value={quoteInfo.quoteNumber} onChange={e => setQuoteInfo({...quoteInfo, quoteNumber: e.target.value})} /></div>
+                    <div className="w-1/2"><label className="block text-gray-600 mb-1">報價日期</label><input type="date" className="w-full border rounded p-2" value={quoteInfo.date} onChange={e => setQuoteInfo({...quoteInfo, date: e.target.value})} /></div>
+                  </div>
+                </div>
+              </section>
+
+              {/* 報價項目編輯 */}
+              <section className="mb-6">
+                <h3 className="font-semibold text-gray-700 mb-3 border-b pb-2">報價項目</h3>
+                {items.map((item, index) => (
+                  <div key={item.id} className="bg-gray-50 p-3 rounded-lg mb-3 border border-gray-200 relative group">
+                    <button onClick={() => removeItem(index)} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
+                    <input className="w-full border rounded p-2 text-sm mb-2" placeholder="項目名稱" value={item.name} onChange={e => handleItemChange(index, 'name', e.target.value)} />
+                    <div className="flex gap-2">
+                      <div className="w-1/3">
+                        <label className="text-xs text-gray-500">數量</label>
+                        <input type="number" min="1" className="w-full border rounded p-2 text-sm" value={item.qty} onChange={e => handleItemChange(index, 'qty', e.target.value)} />
+                      </div>
+                      <div className="w-2/3">
+                        <label className="text-xs text-gray-500">單價 (NT$)</label>
+                        <input type="number" min="0" className="w-full border rounded p-2 text-sm" value={item.price} onChange={e => handleItemChange(index, 'price', e.target.value)} />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                <button onClick={addItem} className="w-full py-2 border-2 border-dashed border-gray-300 text-gray-500 rounded-lg hover:border-orange-400 hover:text-orange-500 transition-colors text-sm font-medium">+ 新增項目</button>
+              </section>
+
+              {/* 備註編輯 */}
+              <section className="mb-8">
+                <h3 className="font-semibold text-gray-700 mb-3 border-b pb-2">備註事項</h3>
+                <textarea className="w-full border rounded p-2 text-sm h-32 focus:ring-2 focus:ring-orange-300" value={settings.notes} onChange={e => setSettings({...settings, notes: e.target.value})} />
+              </section>
+            </div>
+          </div>
+
+          {/* 右側：A4 預覽區 */}
+          <div className="flex-1 overflow-y-auto bg-gray-100 p-4 md:p-8 flex justify-center relative">
+            
+            {/* 懸浮列印按鈕區域 */}
+            <div id="print-button-container" className="fixed top-6 right-8 z-50 flex flex-col gap-3">
+              {/* 原生列印按鈕 (推薦，因為文字可圈選且無跨網域問題) */}
+              <button 
+                onClick={handleNativePrint}
+                className="bg-white text-orange-600 border-2 border-orange-500 hover:bg-orange-50 px-6 py-3 rounded-full shadow-lg font-bold flex items-center justify-center gap-2 transform transition-transform hover:scale-105"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                </svg>
+                原生高清列印 / 另存 PDF
+              </button>
+
+              {/* 套件匯出按鈕 (原來的備用功能) */}
+              <button 
+                onClick={handleExport}
+                disabled={isExporting}
+                className={`bg-gradient-to-r ${isExporting ? 'from-gray-400 to-gray-500 cursor-not-allowed' : 'from-red-500 to-orange-500 hover:from-red-600 hover:to-orange-600'} text-white px-6 py-2 rounded-full shadow-lg font-bold flex items-center justify-center gap-2 transform transition-transform ${!isExporting && 'hover:scale-105'} text-sm`}
+              >
+                {isExporting ? (
+                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                ) : (
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                )}
+                {isExporting ? '處理中...' : '圖檔版一鍵下載'}
+              </button>
+            </div>
+
+            {/* 實際 A4 版面 (210mm x 297mm) */}
+            <div 
+              id="a4-preview" 
+              className="bg-white shadow-2xl relative"
+              style={{ width: '210mm', minHeight: '297mm', padding: '15mm 20mm' }}
+            >
+              {/* 頂部彩色裝飾條 */}
+              <div className="absolute top-0 left-0 w-full h-3 bg-gradient-to-r from-red-500 via-orange-400 to-yellow-400"></div>
+
+              {/* 表頭區塊：LOGO與公司資訊 */}
+              <div className="flex justify-between items-start mb-10 mt-4 border-b-2 border-orange-100 pb-8">
+                <div className="flex items-center gap-6 w-1/2">
+                  <img src={logoUrl} alt="凱雅郡 LOGO" className="w-32 object-contain rounded" onError={(e) => e.target.style.display = 'none'} />
+                  <div>
+                    <h1 className="text-3xl font-black text-gray-800 tracking-wider">QUOTATION</h1>
+                    <p className="text-orange-500 font-bold tracking-widest text-sm mt-1">報 價 單</p>
+                  </div>
+                </div>
+                
+                <div className="text-right text-gray-600 text-sm space-y-1 w-1/2">
+                  <h2 className="text-lg font-bold text-gray-800 mb-2">{company.name}</h2>
+                  <p>統一編號：<span className="font-medium text-gray-800">{company.vat}</span></p>
+                  <p>電話：{company.phone}</p>
+                  <p>信箱：{company.email}</p>
+                  <p>地址：{company.address}</p>
+                </div>
+              </div>
+
+              {/* 客戶與單號資訊 */}
+              <div className="flex justify-between items-stretch mb-8 gap-6">
+                <div className="flex-1 bg-orange-50/50 p-4 rounded-xl border border-orange-100/50">
+                  <h3 className="text-orange-800 font-bold mb-2 text-sm uppercase tracking-wider">Quoted To 客戶資訊</h3>
+                  <p className="text-xl font-bold text-gray-800">{quoteInfo.clientName}</p>
+                  <p className="text-gray-600 mt-1">聯絡人：{quoteInfo.contactPerson}</p>
+                </div>
+                <div className="w-1/3 bg-gray-50 p-4 rounded-xl border border-gray-100 text-sm space-y-2 flex flex-col justify-center">
+                  <div className="flex justify-between"><span className="text-gray-500">報價單號</span> <span className="font-bold text-gray-800">{quoteInfo.quoteNumber}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-500">報價日期</span> <span className="font-medium text-gray-800">{quoteInfo.date}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-500">有效期限</span> <span className="font-medium text-gray-800">{quoteInfo.validUntil}</span></div>
+                </div>
+              </div>
+
+              {/* 報價明細表格 */}
+              <div className="mb-8 rounded-xl overflow-hidden border border-gray-200">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-gradient-to-r from-orange-400 to-yellow-500 text-white text-sm">
+                      <th className="py-3 px-4 font-bold">項目說明 Description</th>
+                      <th className="py-3 px-4 font-bold text-center w-20">數量 Qty</th>
+                      <th className="py-3 px-4 font-bold text-right w-32">單價 Unit Price</th>
+                      <th className="py-3 px-4 font-bold text-right w-32">小計 Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map((item, index) => (
+                      <tr key={item.id} className={index % 2 === 0 ? 'bg-white' : 'bg-orange-50/30'}>
+                        <td className="py-4 px-4 border-b border-gray-100 text-gray-800 font-medium">{item.name || '(未填寫項目)'}</td>
+                        <td className="py-4 px-4 border-b border-gray-100 text-center text-gray-600">{item.qty}</td>
+                        <td className="py-4 px-4 border-b border-gray-100 text-right text-gray-600">NT$ {item.price.toLocaleString()}</td>
+                        <td className="py-4 px-4 border-b border-gray-100 text-right font-bold text-gray-800">NT$ {(item.qty * item.price).toLocaleString()}</td>
+                      </tr>
+                    ))}
+                    {items.length === 0 && (
+                      <tr><td colSpan="4" className="py-8 text-center text-gray-400">目前尚無項目</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* 金額統計 */}
+              <div className="flex justify-end mb-10">
+                <div className="w-72 bg-gray-50 p-5 rounded-xl border border-gray-100 space-y-3">
+                  <div className="flex justify-between text-gray-600">
+                    <span>小計 Subtotal</span>
+                    <span>NT$ {subtotal.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between text-gray-600">
+                    <span>營業稅 Tax (5%)</span>
+                    <span>NT$ {tax.toLocaleString()}</span>
+                  </div>
+                  <div className="pt-3 border-t border-gray-200 flex justify-between items-end">
+                    <span className="text-lg font-bold text-gray-800">總計 Total</span>
+                    <span className="text-2xl font-black text-orange-600">NT$ {total.toLocaleString()}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 備註與簽名區 */}
+              <div className="flex gap-8 mt-auto">
+                <div className="flex-1">
+                  <h4 className="font-bold text-gray-700 mb-2 border-b border-gray-200 pb-2">條款與備註 Terms & Conditions</h4>
+                  <pre className="text-sm text-gray-600 whitespace-pre-wrap font-sans leading-relaxed">
+                    {settings.notes}
+                  </pre>
+                </div>
+                
+                <div className="w-64">
+                  <h4 className="font-bold text-gray-700 mb-2 border-b border-gray-200 pb-2">客戶簽章 Client Signature</h4>
+                  <div className="h-24 border-2 border-dashed border-gray-300 rounded-lg mt-4 bg-gray-50"></div>
+                  <p className="text-xs text-gray-400 text-center mt-2">請簽名並蓋上公司章回傳</p>
+                </div>
+              </div>
+
+              {/* 底部裝飾 */}
+              <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-red-500 via-orange-400 to-yellow-400"></div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<QuotationGenerator />);
+  </script>
+</body>
+</html>
