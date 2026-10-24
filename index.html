@@ -21,14 +21,23 @@
     const { useState, useEffect, useRef } = React;
 
     function QuotationGenerator() {
-      // 初始公司狀態 (已預填統編與預設資訊，可隨時修改)
-      const [company, setCompany] = useState({
-        name: '凱雅郡股份有限公司 CREATE DREAM',
-        vat: '59298062',
-        phone: '',
-        email: 'createdreams.tw@gmail.com',
-        address: '',
+      // 初始公司狀態：統編、電話、信箱、地址不預填（網頁是公開的）
+      // 填過一次後會記在這台電腦的瀏覽器裡，下次打開自動帶入，不會上傳到任何地方
+      const COMPANY_KEY = 'quotation-company';
+      const [company, setCompany] = useState(() => {
+        const blank = { name: '凱雅郡股份有限公司 CREATE DREAM', vat: '', phone: '', email: '', address: '' };
+        try {
+          return { ...blank, ...JSON.parse(localStorage.getItem(COMPANY_KEY) || '{}') };
+        } catch {
+          return blank;
+        }
       });
+
+      useEffect(() => {
+        try {
+          localStorage.setItem(COMPANY_KEY, JSON.stringify(company));
+        } catch {}
+      }, [company]);
 
       // 用於地端解決圖片 CORS 阻擋問題的 Base64 LOGO
       const [logoUrl, setLogoUrl] = useState('凱雅郡LOGO.jpg');
@@ -181,10 +190,11 @@
                 </h3>
                 <div className="space-y-3 text-sm">
                   <div><label className="block text-gray-600 mb-1">公司名稱</label><input className="w-full border rounded p-2 focus:ring-2 focus:ring-orange-300" value={company.name} onChange={e => setCompany({...company, name: e.target.value})} /></div>
-                  <div><label className="block text-gray-600 mb-1">統一編號</label><input className="w-full border rounded p-2 focus:ring-2 focus:ring-orange-300" value={company.vat} onChange={e => setCompany({...company, vat: e.target.value})} /></div>
-                  <div><label className="block text-gray-600 mb-1">連絡電話</label><input className="w-full border rounded p-2 focus:ring-2 focus:ring-orange-300" value={company.phone} onChange={e => setCompany({...company, phone: e.target.value})} /></div>
-                  <div><label className="block text-gray-600 mb-1">電子信箱</label><input className="w-full border rounded p-2 focus:ring-2 focus:ring-orange-300" value={company.email} onChange={e => setCompany({...company, email: e.target.value})} /></div>
-                  <div><label className="block text-gray-600 mb-1">公司地址</label><input className="w-full border rounded p-2 focus:ring-2 focus:ring-orange-300" value={company.address} onChange={e => setCompany({...company, address: e.target.value})} /></div>
+                  <div><label className="block text-gray-600 mb-1">統一編號</label><input className="w-full border rounded p-2 focus:ring-2 focus:ring-orange-300" placeholder="8 碼統一編號" inputMode="numeric" value={company.vat} onChange={e => setCompany({...company, vat: e.target.value})} /></div>
+                  <div><label className="block text-gray-600 mb-1">連絡電話</label><input className="w-full border rounded p-2 focus:ring-2 focus:ring-orange-300" placeholder="例：07-123-4567" type="tel" value={company.phone} onChange={e => setCompany({...company, phone: e.target.value})} /></div>
+                  <div><label className="block text-gray-600 mb-1">電子信箱</label><input className="w-full border rounded p-2 focus:ring-2 focus:ring-orange-300" placeholder="例：service@example.com" type="email" value={company.email} onChange={e => setCompany({...company, email: e.target.value})} /></div>
+                  <div><label className="block text-gray-600 mb-1">公司地址</label><input className="w-full border rounded p-2 focus:ring-2 focus:ring-orange-300" placeholder="公司地址" value={company.address} onChange={e => setCompany({...company, address: e.target.value})} /></div>
+                  <p className="text-xs text-gray-500">填過一次會記在這台電腦的瀏覽器，下次自動帶入。</p>
                 </div>
               </section>
 
@@ -288,10 +298,11 @@
                 
                 <div className="text-right text-gray-600 text-sm space-y-1 w-1/2">
                   <h2 className="text-lg font-bold text-gray-800 mb-2">{company.name}</h2>
-                  <p>統一編號：<span className="font-medium text-gray-800">{company.vat}</span></p>
-                  <p>電話：{company.phone}</p>
-                  <p>信箱：{company.email}</p>
-                  <p>地址：{company.address}</p>
+                  {/* 沒填的欄位不顯示 */}
+                  {company.vat && <p>統一編號：<span className="font-medium text-gray-800">{company.vat}</span></p>}
+                  {company.phone && <p>電話：{company.phone}</p>}
+                  {company.email && <p>信箱：{company.email}</p>}
+                  {company.address && <p>地址：{company.address}</p>}
                 </div>
               </div>
 
